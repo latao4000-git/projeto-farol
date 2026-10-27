@@ -1,0 +1,23 @@
+# O Genie Agent do Projeto Farol como CÓDIGO.
+#
+# Na noite 1 o Genie foi plugado direto na bronze e errou as quatro perguntas do
+# dono com toda a confiança ("nenhum atraso custa nada"). Hoje ele lê a gold,
+# com as três ferramentas integradas, COMMENT em toda tabela, as métricas
+# governadas (mv_*) e instruções de negócio escritas.
+#
+# O modelo é o MESMO. O que mudou foi tudo que está embaixo dele.
+#
+# As instruções (o "hoje" do dataset, as regras de corte, onde achar a causa do
+# atraso) passam a ter histórico, revisão e rollback, como qualquer código.
+# Para mudar: edite scripts/gerar_genie.py, gere o JSON e faça deploy.
+
+resources:
+  genie_spaces:
+    genie_farol:
+      title: Farol · Diretoria
+      description: >-
+        Pergunte em português sobre os 60 projetos da Vértice Tecnologia: quais estão atrasados e de
+        quais clientes, quanto o atraso custa, quem está parado enquanto outro projeto pede gente e o
+        que vai dar errado no próximo mês.
+      file_path: ../resources/farol.geniespace.json
+      warehouse_id: ${var.warehouse_id}

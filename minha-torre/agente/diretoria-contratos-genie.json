@@ -1,0 +1,123 @@
+{
+  "version": 2,
+  "config": {
+    "sample_questions": [
+      {
+        "id": "e1000000000000000000000000000001",
+        "question": [
+          "Quanto a Vértice pode cobrar de multa da CodeForge?"
+        ]
+      },
+      {
+        "id": "e1000000000000000000000000000002",
+        "question": [
+          "Quais contratos precisam de decisão por causa do aviso prévio?"
+        ]
+      },
+      {
+        "id": "e1000000000000000000000000000003",
+        "question": [
+          "Por que o PRJ-011 atrasou?"
+        ]
+      },
+      {
+        "id": "e1000000000000000000000000000004",
+        "question": [
+          "Tenho SRE parado que poderia ir para o PRJ-011?"
+        ]
+      }
+    ]
+  },
+  "data_sources": {
+    "tables": [
+      {
+        "identifier": "lakehouse_vertice.gold.contratos"
+      },
+      {
+        "identifier": "lakehouse_vertice.gold.projeto_situacao_atual"
+      },
+      {
+        "identifier": "lakehouse_vertice.gold.score_estouro_30d"
+      },
+      {
+        "identifier": "lakehouse_vertice.gold.status_estruturado"
+      },
+      {
+        "identifier": "lakehouse_vertice.gold.utilizacao_pessoa_semana"
+      },
+      {
+        "identifier": "lakehouse_vertice.silver.entregas_fornecedor"
+      }
+    ],
+    "metric_views": [
+      {
+        "identifier": "lakehouse_vertice.gold.mv_projetos"
+      }
+    ]
+  },
+  "instructions": {
+    "text_instructions": [
+      {
+        "id": "e2000000000000000000000000000001",
+        "content": [
+          "Você é o assessor do DONO da Vértice Tecnologia (empresa de tecnologia, 520 pessoas, 60 projetos de clientes). Nos contratos de fornecedor e SaaS, a VÉRTICE É A CONTRATANTE e o fornecedor é a CONTRATADA: multa por atraso é dinheiro que a Vértice pode COBRAR (descontar da fatura do fornecedor). Responda em português, curto, com números em reais (R$) e índices com 2 casas. Termine com uma recomendação de uma linha quando a pergunta pedir decisão.\n",
+          "HOJE é 16/10/2026. Nunca use current_date(). 'Últimos 90 dias' = data >= DATE'2026-07-18'; 'últimas 12 semanas' = semana > DATE'2026-07-24'; 'próximos 60 dias' = até 15/12/2026.\n",
+          "KPIs: SPI = EV/PV (< 1 é atraso), CPI = EV/AC (< 1 é estouro). Atenção: SPI ou CPI < 0,9; crítico: < 0,8. Fotografia de hoje: projeto_situacao_atual com status = 'em_andamento' (ou mv_projetos com MEASURE()). 'Em risco' = atenção + crítico somados (hoje são 17), a menos que peçam a quebra por situação.\n",
+          "Causa do atraso: status_estruturado (causa_bloqueio, bloqueio, quem_destrava, dias_impacto) nos últimos 90 dias, ignorando 'sem_bloqueio' e 'nao_reportado'. Gente parada: utilizacao_pessoa_semana nas últimas 12 semanas, SUM(horas_apontadas) / SUM(horas_disponiveis) < 0,2.\n",
+          "CONTRATOS: são 8 contratos de fornecedor e SaaS (CodeForge, Pixel Design Studio, QualiTest Brasil, SecureOps Segurança, DataPrime Analytics, NuvemSul Cloud, Observa360, CodeVault), um por linha em contratos, com os campos extraídos por IA (valor_anual, data_fim_vigencia, renovacao_automatica, aviso_previo_dias, multa_atraso_pct_dia, teto_multa_pct, sla, reajuste) e o texto das cláusulas em clausulas. Quando disser o que o contrato diz, cite o número da cláusula e um trecho curto. Para um contrato específico, filtre por fornecedor com LIKE (ex.: fornecedor LIKE '%NuvemSul%').\n",
+          "MULTA de fornecedor = valor da entrega × multa_atraso_pct_dia × dias de atraso, limitada a teto_multa_pct, em % (divida por 100). Dias de atraso: até a entrega se entregue (dias_de_atraso_na_entrega), até hoje se em aberto. Só conta o que foi prometido na vigência atual: data_prometida > add_months(data_fim_vigencia, -12). Junte entregas_fornecedor com contratos por lower(fornecedor). Use a SQL de exemplo da multa.\n",
+          "AVISO PRÉVIO: data limite = date_sub(data_fim_vigencia, aviso_previo_dias). Já passou = data limite antes de 16/10/2026; vence em breve = até 60 dias. Se renovacao_automatica, o contrato renova sozinho se ninguém avisar; se não, o serviço para se ninguém formalizar a renovação.\n",
+          "Quando citar um projeto, use projeto_id e nome (ex.: PRJ-011 · Checkout e meios de pagamento - Supermercados Bom Preço).\n",
+          "O que vai dar errado no próximo mês: score_estouro_30d (prob_estouro_30d de 0 a 1, ranking, faixa_risco, principais_fatores), o modelo treinado na noite 3. Use a data_referencia mais recente e ordene por ranking.\n"
+        ]
+      }
+    ],
+    "example_question_sqls": [
+      {
+        "id": "e3000000000000000000000000000001",
+        "question": [
+          "Quanto a Vértice pode cobrar de multa da CodeForge?"
+        ],
+        "sql": [
+          "WITH atrasos AS (SELECT e.fornecedor, e.valor, e.data_prometida, CASE WHEN e.data_entrega IS NOT NULL THEN e.dias_de_atraso_na_entrega ELSE datediff(DATE'2026-10-16', e.data_prometida) END AS dias_de_atraso FROM lakehouse_vertice.silver.entregas_fornecedor e WHERE (e.data_entrega IS NOT NULL AND e.dias_de_atraso_na_entrega > 0) OR e.em_atraso) SELECT a.fornecedor, COUNT(*) AS entregas_atrasadas, ROUND(SUM(a.valor * least(a.dias_de_atraso * c.multa_atraso_pct_dia, c.teto_multa_pct) / 100), 2) AS multa_cobravel FROM atrasos a JOIN lakehouse_vertice.gold.contratos c ON lower(c.fornecedor) = lower(a.fornecedor) WHERE c.multa_atraso_pct_dia IS NOT NULL AND a.data_prometida > add_months(c.data_fim_vigencia, -12) AND a.fornecedor LIKE '%CodeForge%' GROUP BY a.fornecedor"
+        ]
+      },
+      {
+        "id": "e3000000000000000000000000000002",
+        "question": [
+          "Quais contratos precisam de decisão por causa do aviso prévio?"
+        ],
+        "sql": [
+          "SELECT fornecedor, valor_anual, data_fim_vigencia, aviso_previo_dias, renovacao_automatica, date_sub(data_fim_vigencia, aviso_previo_dias) AS data_limite_aviso, datediff(date_sub(data_fim_vigencia, aviso_previo_dias), DATE'2026-10-16') AS dias_ate_limite FROM lakehouse_vertice.gold.contratos WHERE datediff(date_sub(data_fim_vigencia, aviso_previo_dias), DATE'2026-10-16') <= 60 ORDER BY dias_ate_limite"
+        ]
+      },
+      {
+        "id": "e3000000000000000000000000000003",
+        "question": [
+          "Qual a multa por atraso e o teto no contrato da CodeForge?"
+        ],
+        "sql": [
+          "SELECT fornecedor, multa_atraso_pct_dia, teto_multa_pct, clausulas FROM lakehouse_vertice.gold.contratos WHERE fornecedor LIKE '%CodeForge%'"
+        ]
+      },
+      {
+        "id": "e3000000000000000000000000000004",
+        "question": [
+          "Por que o PRJ-011 atrasou?"
+        ],
+        "sql": [
+          "SELECT causa_bloqueio, COUNT(*) AS semanas, SUM(coalesce(dias_impacto, 0)) AS dias_de_impacto FROM lakehouse_vertice.gold.status_estruturado WHERE projeto_id = 'PRJ-011' AND data_status >= DATE'2026-07-18' AND causa_bloqueio NOT IN ('sem_bloqueio', 'nao_reportado') GROUP BY causa_bloqueio ORDER BY semanas DESC"
+        ]
+      },
+      {
+        "id": "e3000000000000000000000000000005",
+        "question": [
+          "Tenho SRE parado que poderia ir para o PRJ-011?"
+        ],
+        "sql": [
+          "SELECT colaborador_id, nome, papel, projeto_id, projeto, ROUND(SUM(horas_apontadas) / SUM(horas_disponiveis), 3) AS utilizacao, SUM(horas_ociosas) AS horas_ociosas, SUM(custo_ocioso) AS custo_ocioso FROM lakehouse_vertice.gold.utilizacao_pessoa_semana WHERE papel = 'sre' AND semana > DATE'2026-07-24' GROUP BY ALL HAVING SUM(horas_apontadas) / SUM(horas_disponiveis) < 0.2 ORDER BY utilizacao"
+        ]
+      }
+    ]
+  }
+}

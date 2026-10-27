@@ -1,0 +1,19 @@
+# Pipeline vertice_medalhao: a bronze vira silver (e, no prompt 3, gold).
+#
+# Declarativo: cada arquivo diz O QUE a tabela é. O Lakeflow lê os FROM,
+# descobre a ordem, roda em paralelo o que dá e desenha o grafo.
+resources:
+  pipelines:
+    vertice_medalhao:
+      name: vertice_medalhao
+      catalog: ${var.catalog}
+      # schema padrão do pipeline: as tabelas sem nome completo caem na silver
+      schema: silver
+      serverless: true
+      photon: true
+      libraries:
+        - glob:
+            include: ../src/silver/**
+        # a gold escreve com o nome completo lakehouse_vertice.gold.<tabela>
+        - glob:
+            include: ../src/gold/**

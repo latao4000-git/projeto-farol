@@ -1,0 +1,93 @@
+# Job vertice_farol: a Torre de Controle roda sozinha toda segunda às 6h,
+# depois do status semanal de sexta.
+#
+# Hoje (prompt 1) ele tem uma tarefa só: conferencia_bronze.
+# Os próximos prompts acrescentam, nesta ordem:
+#   - medalhao             (prompt 2 e 3: pipeline Lakeflow, silver ×7 e gold ×3)
+#   - testes_de_qualidade  (prompt 3: sql_task com os testes da gold)
+#   - status_com_ia        (prompt 4: ai_classify + ai_extract no texto do status)
+#   - metricas_governadas  (prompt 5: a metric view mv_projetos)
+#   - ml_features → ml_modelo → ml_score  (noite 3: o modelo de estouro em 30 dias)
+resources:
+  jobs:
+    vertice_farol:
+      name: vertice_farol
+      schedule:
+        quartz_cron_expression: 0 0 6 ? * MON
+        timezone_id: America/Sao_Paulo
+        # pausado enquanto o projeto está em construção (ver comentário no databricks.yml)
+        pause_status: PAUSED
+      max_concurrent_runs: 1
+      tasks:
+        # Antes de calcular qualquer KPI, confere se o dado das três ferramentas
+        # chegou inteiro. Se não chegou, o job para aqui.
+        - task_key: conferencia_bronze
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/conferencia/00-conferencia-bronze.sql
+
+        # A bronze vira silver: o pipeline declarativo vertice_medalhao.
+        - task_key: medalhao
+          depends_on:
+            - task_key: conferencia_bronze
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.vertice_medalhao.id}
+
+        # Os 10 testes: se algum falhar, raise_error() quebra o job aqui.
+        - task_key: testes_de_qualidade
+          depends_on:
+            - task_key: medalhao
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/testes/testes.sql
+
+        # O texto do status vira coluna (regra + ai_classify + ai_extract).
+        # Roda em paralelo com os testes, também depois do medalhao.
+        - task_key: status_com_ia
+          depends_on:
+            - task_key: medalhao
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/ia/status_estruturado.sql
+
+        # Os KPIs governados (metric view mv_projetos). Só depois que os testes
+        # passaram E a IA classificou o status: o dashboard e o Genie leem daqui.
+        - task_key: metricas_governadas
+          depends_on:
+            - task_key: testes_de_qualidade
+            - task_key: status_com_ia
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/metricas/metricas.sql
+
+        # ── noite 3 · ML é mais uma camada do mesmo pipeline ─────────
+        # As features: uma linha por projeto e semana, só olhando para trás.
+        - task_key: ml_features
+          depends_on:
+            - task_key: metricas_governadas
+          sql_task:
+            warehouse_id: ${var.warehouse_id}
+            file:
+              path: ../src/ml/01-features.sql
+
+        # O modelo: baselines, treino, testes, MLflow e Unity Catalog (@prod).
+        - task_key: ml_modelo
+          depends_on:
+            - task_key: ml_features
+          notebook_task:
+            notebook_path: ../src/ml/02-modelo.py
+            base_parameters:
+              catalog: ${var.catalog}
+
+        # O score de hoje: a lista que o dono abre na segunda (gold.score_estouro_30d).
+        - task_key: ml_score
+          depends_on:
+            - task_key: ml_modelo
+          notebook_task:
+            notebook_path: ../src/ml/03-score.py
+            base_parameters:
+              catalog: ${var.catalog}

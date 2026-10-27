@@ -1,0 +1,33 @@
+bundle:
+  name: vertice
+
+include:
+  - resources/*.yml
+
+# As skills do Claude Code ficam só na máquina: sem isto o deploy sobe 372 arquivos.
+sync:
+  exclude:
+    - .claude/**
+
+variables:
+  catalog:
+    description: catálogo do projeto (criado na noite 1, o bundle não gerencia)
+    default: lakehouse_vertice
+  warehouse_id:
+    description: SQL Warehouse das sql_task (o Serverless Starter Warehouse do Free Edition)
+    default: 7b2456d0fa260c04
+
+targets:
+  # ARMADILHA: o dev NÃO usa `mode: development`. Ele prefixa tudo com
+  # [dev seu_usuario], inclusive os datasets do pipeline, e o SQL quebra.
+  # O gabarito pausa os agendamentos com `presets: { trigger_pause_status: PAUSED }`,
+  # mas aqui o preset pausaria também o job Ingestão, que precisa rodar todo dia.
+  # Por isso o vertice_farol já nasce com o schedule PAUSED no próprio YAML.
+  # O host do workspace vem do `--profile` (~/.databrickscfg): nada de URL fixa no Git.
+  dev:
+    default: true
+
+  prod:
+    mode: production
+    workspace:
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}

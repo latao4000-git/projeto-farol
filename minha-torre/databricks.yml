@@ -1,0 +1,60 @@
+bundle:
+  name: minha-torre
+
+include:
+  - resources/*.yml
+
+variables:
+  sql_warehouse_id:
+    description: SQL Warehouse ID
+  genie_space_id:
+    description: Default Genie Space ID
+  genie_space_name:
+    description: Genie Space display name
+  postgres_branch:
+    description: Branch do Lakebase (databricks postgres list-branches projects/minha-torre)
+  postgres_database:
+    description: Database do Lakebase (databricks postgres list-databases <branch>)
+
+resources:
+  apps:
+    app:
+      name: "minha-torre"
+      description: "Projeto Farol da Vértice: projetos em risco, simulador de realocação e perguntas ao Genie"
+      source_code_path: ./
+
+      # Start the app automatically on deploy.
+      lifecycle:
+        started: true
+      user_api_scopes:
+        - dashboards.genie
+
+      # The resources which this app has access to.
+      resources:
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.sql_warehouse_id}
+            permission: CAN_USE
+        - name: genie-space
+          genie_space:
+            name: ${var.genie_space_name}
+            space_id: ${var.genie_space_id}
+            permission: CAN_RUN
+        - name: postgres
+          postgres:
+            branch: ${var.postgres_branch}
+            database: ${var.postgres_database}
+            permission: CAN_CONNECT_AND_CREATE
+
+targets:
+  # O host do workspace vem do `--profile` (~/.databrickscfg). Os ids abaixo são do
+  # workspace do autor: troque pelos seus.
+  default:
+    default: true
+
+    variables:
+      sql_warehouse_id: 7b2456d0fa260c04
+      genie_space_id: 01f1ce6e0d5b1492b4fefe805b55e509
+      genie_space_name: Farol · Diretoria + Contratos
+      postgres_branch: projects/minha-torre/branches/production
+      postgres_database: projects/minha-torre/branches/production/databases/databricks-postgres
